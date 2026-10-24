@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Shows which carried branches conflict with each other, by test-merging every pair in memory
+# (nothing is checked out). Also lists the files each branch changes.
+#
+# usage: Meta/overlaps [extra-branch ...]
+#   With no arguments it checks the branches seen carries. Name extra branches to check a new
+#   fix before merging it into seen.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+UPSTREAM=upstream/master
+bs=()
+while IFS= read -r subject; do
+    if [[ $subject =~ ^Merge\ (remote-tracking\ )?branch\ \'([^\']+)\' ]]; then
+        b=${BASH_REMATCH[2]}
+        git rev-parse -q --verify "refs/heads/$b" >/dev/null && bs+=("$b")
+    fi
+done < <(git log --first-parent --merges --reverse --format=%s "$UPSTREAM..seen" 2>/dev/null)
+bs+=("$@")
+
+for b in "${bs[@]}"; do
+    echo "$b"
+    git diff --name-only "$UPSTREAM...$b" | sed 's/^/    /'
+done
+echo
+
+found=0
+for ((i = 0; i < ${#bs[@]}; i++)); do
+    for ((j = i + 1; j < ${#bs[@]}; j++)); do
+        if ! git merge-tree --write-tree --quiet "${bs[i]}" "${bs[j]}" >/dev/null; then
+            echo "conflict: ${bs[i]} <-> ${bs[j]}"
+            found=1
+        fi
+    done
+done
+[[ $found -eq 0 ]] && echo "no conflicts between any two of these ${#bs[@]} branches"
+exit 0

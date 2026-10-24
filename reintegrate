@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Rebuilds the "seen" branch: the latest upstream/master plus every branch seen already carries.
+#
+# The list of branches is seen's own merge history (git log --first-parent --merges), so:
+#   carry a branch      git switch seen && git merge --no-ff <branch>      (once)
+#   stop carrying it    delete the branch; the next rebuild leaves it out
+#   merged upstream     nothing to do; its merge comes out empty and is dropped
+#
+# Branches named pr/<number> are other people's PRs. They're refreshed from upstream's
+# refs/pull/<number>/head before each rebuild.
+#
+# usage: Meta/reintegrate [--no-test] [--push] [--publish]
+#   --no-test   skip the full test suite
+#   --push      force-push seen to origin afterwards (keeps a backup of the list)
+#   --publish   dotnet publish linux-arm64 to ~/mbbsemu-linux-arm64 afterwards
+#
+# On a conflict it stops on branch seen-new with the merge in progress. Resolve it, run
+# git commit, and run Meta/reintegrate again: the rebuild starts over and rerere replays your
+# resolution. seen itself only moves once the whole rebuild succeeds.
+set -euo pipefail
+
+UPSTREAM=upstream/master
+TEST=1 PUSH=0 PUBLISH=0
+for arg in "$@"; do
+    case $arg in
+        --no-test) TEST=0 ;;
+        --push) PUSH=1 ;;
+        --publish) PUBLISH=1 ;;
+        *) echo "unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+
+cd "$(git rev-parse --show-toplevel)"
+git config rerere.enabled true
+git config rerere.autoupdate true
+
+if [[ -n $(git diff --name-only --diff-filter=U) ]]; then
+    echo "A merge is still in progress. Finish it (git commit) or abort it (git merge --abort) first." >&2
+    exit 1
+fi
+
+git fetch -q --prune upstream
+git fetch -q --prune origin
+
+# The branches seen carries, oldest merge first
+branches=()
+if git rev-parse -q --verify seen >/dev/null; then
+    while IFS= read -r subject; do
+        if [[ $subject =~ ^Merge\ (remote-tracking\ )?branch\ \'([^\']+)\' ]]; then
+            branches+=("${BASH_REMATCH[2]}")
+        fi
+    done < <(git log --first-parent --merges --reverse --format=%s "$UPSTREAM..seen")
+fi
+if [[ ${#branches[@]} -eq 0 ]]; then
+    echo "seen carries no branches yet. Start it with: git switch -c seen $UPSTREAM && git merge --no-ff <branch>" >&2
+    exit 1
+fi
+
+# Other people's PRs: refresh from upstream
+for b in "${branches[@]}"; do
+    if [[ $b =~ ^pr/([0-9]+)$ ]]; then
+        git fetch -q upstream "+refs/pull/${BASH_REMATCH[1]}/head:refs/heads/$b"
+    fi
+done
+
+git switch -q -C seen-new "$UPSTREAM"
+carried=() dropped=()
+for b in "${branches[@]}"; do
+    if ! git rev-parse -q --verify "refs/heads/$b" >/dev/null; then
+        dropped+=("$b (branch deleted)"); continue
+    fi
+    if [[ $b != pr/* ]] && git rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null \
+        && [[ $(git rev-parse "$b") != $(git rev-parse "origin/$b") ]]; then
+        echo "note: $b differs from origin/$b (using the local branch)"
+    fi
+    if git merge-base --is-ancestor "$b" HEAD; then
+        dropped+=("$b (already in upstream)"); continue
+    fi
+
+    if ! git merge -q --no-ff --no-edit -m "Merge branch '$b' into seen" "$b" >/dev/null 2>&1; then
+        if [[ -n $(git diff --name-only --diff-filter=U) ]]; then
+            echo "CONFLICT merging $b into seen-new:" >&2
+            git diff --name-only --diff-filter=U | sed 's/^/  /' >&2
+            echo "Resolve it, git commit, then run Meta/reintegrate again." >&2
+            exit 1
+        fi
+        # rerere resolved every conflict from an earlier resolution
+        git commit -q --no-edit
+        echo "reused an earlier conflict resolution for $b"
+    fi
+
+    # Squash-merged or otherwise already upstream: the merge changed nothing
+    if git diff --quiet HEAD^1 HEAD; then
+        git reset -q --hard HEAD^1
+        dropped+=("$b (its changes are already in upstream)"); continue
+    fi
+    carried+=("$b")
+done
+
+git branch -q -f seen seen-new
+git switch -q seen
+git branch -q -D seen-new
+
+echo "seen = $(git rev-parse --short $UPSTREAM) ($UPSTREAM) + ${#carried[@]} branches:"
+for b in "${carried[@]}"; do echo "  $b  ($(git rev-list --count "$UPSTREAM..$b") commits)"; done
+for d in ${dropped[@]+"${dropped[@]}"}; do echo "  dropped: $d"; done
+echo "(previous seen is seen@{1} if you need it back: git branch -f seen seen@{1})"
+
+if [[ $TEST -eq 1 ]]; then
+    dotnet test MBBSEmu.Tests/MBBSEmu.Tests.csproj -c Release 2>&1 | grep -E '^(Passed!|Failed!)|error' || true
+fi
+if [[ $PUSH -eq 1 ]]; then
+    git push -q --force-with-lease origin seen
+    echo "pushed seen to origin"
+fi
+if [[ $PUBLISH -eq 1 ]]; then
+    dotnet publish MBBSEmu/MBBSEmu.csproj -c Release -r linux-arm64 --self-contained \
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+        -o ~/mbbsemu-linux-arm64 -v q -nologo
+    echo "published to ~/mbbsemu-linux-arm64"
+fi
