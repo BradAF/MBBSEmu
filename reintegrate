@@ -40,6 +40,30 @@ if [[ -n $(git diff --name-only --diff-filter=U) ]]; then
     exit 1
 fi
 
+# Upstream stored four asset files with CRLF although .gitattributes asks for LF, so on any commit
+# without fix/renormalize-line-endings git reports them as modified, and git merge refuses to touch
+# them. Those differences are line endings only, so they're safe to throw away; real changes aren't.
+real_changes() { [[ -n $(git diff --cached --name-only) || -n $(git diff --ignore-cr-at-eol --name-only) ]]; }
+if real_changes; then
+    echo "You have uncommitted changes. Commit or stash them first:" >&2
+    git status --short >&2
+    exit 1
+fi
+
+# Merges $1 into HEAD. With only line-ending noise in the working tree, git merge would refuse, so
+# the merge is made in memory instead and the working tree reset to it. Returns 1 on a conflict.
+merge_branch() {
+    local message="Merge branch '$1' into seen"
+    if git diff --quiet; then
+        git merge -q --no-ff --no-edit -m "$message" "$1" >/dev/null 2>&1
+        return
+    fi
+    real_changes && return 1
+    local tree
+    tree=$(git merge-tree --write-tree HEAD "$1") || return 1
+    git reset -q --hard "$(git commit-tree "$tree" -p HEAD -p "$1" -m "$message")"
+}
+
 git fetch -q --prune upstream
 git fetch -q --prune origin
 
@@ -78,7 +102,12 @@ for b in "${branches[@]}"; do
         dropped+=("$b (already in upstream)"); continue
     fi
 
-    if ! git merge -q --no-ff --no-edit -m "Merge branch '$b' into seen" "$b" >/dev/null 2>&1; then
+    if ! merge_branch "$b"; then
+        if ! git diff --quiet && [[ -z $(git diff --name-only --diff-filter=U) ]]; then
+            echo "CONFLICT merging $b while the line-ending noise is present. Put" >&2
+            echo "fix/renormalize-line-endings first in seen so later merges run on a clean tree." >&2
+            exit 1
+        fi
         if [[ -n $(git diff --name-only --diff-filter=U) ]]; then
             echo "CONFLICT merging $b into seen-new:" >&2
             git diff --name-only --diff-filter=U | sed 's/^/  /' >&2
