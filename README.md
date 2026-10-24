@@ -39,3 +39,17 @@ out empty. If upstream merged only part of a fix, the rest drops out too, so rea
 succeeded. If a merge conflicts, it stops there. Resolve the conflict, `git commit`, and run it
 again. rerere (turned on by the script) remembers the resolution and reapplies it on every
 later rebuild.
+
+## Upstream's line-ending noise
+
+Upstream stored four asset files with CRLF although `.gitattributes` asks for LF, so on
+`upstream/master` and on every `fix/*` branch, `git status` shows them as modified. Only line
+endings differ, and git merge refuses to merge over them. Two things handle it:
+
+- `fix/renormalize-line-endings` (`git add --renormalize .`) is the **first** merge in `seen`, so
+  `seen` itself is clean and every later merge in a rebuild runs on a clean tree.
+- `reintegrate` merges in memory (`git merge-tree` + `git commit-tree`, then `git reset --hard`)
+  when line endings are the only uncommitted differences. It refuses to run with real ones.
+
+Never `git add -A` / `git commit -a` on a branch with the noise: it would commit the
+renormalization into that fix.
