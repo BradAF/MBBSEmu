@@ -10,7 +10,9 @@ echo Meta/ >> .git/info/exclude
 
 ## Branches
 
-- `upstream/master`: mbbsemu/MBBSEmu, never committed to.
+- `upstream/master`: mbbsemu/MBBSEmu, never committed to. Start every new branch from here.
+- `master` on the fork: a mirror of `upstream/master`, fast-forwarded by `reintegrate --push`.
+  There's deliberately no local `master` branch, so there's no stale copy to branch from.
 - `fix/*`: one fix each, started from `upstream/master`. Most are or will be PRs upstream.
 - `pr/<number>`: someone else's open PR, fetched from upstream's `refs/pull/<number>/head`.
 - `seen`: what gets built and run. It's rebuilt from `upstream/master` plus every branch it

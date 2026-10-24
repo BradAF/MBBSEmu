@@ -11,7 +11,8 @@
 #
 # usage: Meta/reintegrate [--no-test] [--push] [--publish]
 #   --no-test   skip the full test suite
-#   --push      force-push seen to origin afterwards (keeps a backup of the list)
+#   --push      force-push seen to origin afterwards (keeps a backup of the list), and
+#               fast-forward origin's master to upstream/master (it's a mirror; never commit to it)
 #   --publish   dotnet publish linux-arm64 to ~/mbbsemu-linux-arm64 afterwards
 #
 # On a conflict it stops on branch seen-new with the merge in progress. Resolve it, run
@@ -111,7 +112,8 @@ if [[ $TEST -eq 1 ]]; then
 fi
 if [[ $PUSH -eq 1 ]]; then
     git push -q --force-with-lease origin seen
-    echo "pushed seen to origin"
+    git push -q origin "$UPSTREAM:refs/heads/master"
+    echo "pushed seen to origin and synced origin's master to $UPSTREAM"
 fi
 if [[ $PUBLISH -eq 1 ]]; then
     dotnet publish MBBSEmu/MBBSEmu.csproj -c Release -r linux-arm64 --self-contained \
