@@ -17,6 +17,10 @@ while IFS= read -r subject; do
     fi
 done < <(git log --first-parent --merges --reverse --format=%s "$UPSTREAM..seen" 2>/dev/null)
 bs+=("$@")
+if [[ ${#bs[@]} -eq 0 ]]; then
+    echo "seen carries no branches and none were named" >&2
+    exit 1
+fi
 
 for b in "${bs[@]}"; do
     echo "$b"

@@ -103,7 +103,7 @@ git switch -q seen
 git branch -q -D seen-new
 
 echo "seen = $(git rev-parse --short $UPSTREAM) ($UPSTREAM) + ${#carried[@]} branches:"
-for b in "${carried[@]}"; do echo "  $b  ($(git rev-list --count "$UPSTREAM..$b") commits)"; done
+for b in ${carried[@]+"${carried[@]}"}; do echo "  $b  ($(git rev-list --count "$UPSTREAM..$b") commits)"; done
 for d in ${dropped[@]+"${dropped[@]}"}; do echo "  dropped: $d"; done
 echo "(previous seen is seen@{1} if you need it back: git branch -f seen seen@{1})"
 
