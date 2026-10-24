@@ -56,9 +56,9 @@ if [[ ${#branches[@]} -eq 0 ]]; then
     exit 1
 fi
 
-# Other people's PRs: refresh from upstream
+# Other people's PRs: refresh from upstream (only while the branch exists; deleting it drops the PR)
 for b in "${branches[@]}"; do
-    if [[ $b =~ ^pr/([0-9]+)$ ]]; then
+    if [[ $b =~ ^pr/([0-9]+)$ ]] && git rev-parse -q --verify "refs/heads/$b" >/dev/null; then
         git fetch -q upstream "+refs/pull/${BASH_REMATCH[1]}/head:refs/heads/$b"
     fi
 done
