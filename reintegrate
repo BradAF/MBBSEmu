@@ -13,7 +13,7 @@
 #   --no-test   skip the full test suite
 #   --push      force-push seen to origin afterwards (keeps a backup of the list), and
 #               fast-forward origin's master to upstream/master (it's a mirror; never commit to it)
-#   --publish   dotnet publish linux-arm64 to ~/mbbsemu-linux-arm64 afterwards
+#   --publish   dotnet publish linux-arm64 (self-contained, not single-file) to ./publish afterwards
 #
 # On a conflict it stops on branch seen-new with the merge in progress. Resolve it, run
 # git commit, and run Meta/reintegrate again: the rebuild starts over and rerere replays your
@@ -116,8 +116,10 @@ if [[ $PUSH -eq 1 ]]; then
     echo "pushed seen to origin and synced origin's master to $UPSTREAM"
 fi
 if [[ $PUBLISH -eq 1 ]]; then
+    #Start from an empty folder: publish doesn't remove files from an older build, and the Pi copy
+    #is made with rsync --delete, which would carry them over
+    rm -rf publish
     dotnet publish MBBSEmu/MBBSEmu.csproj -c Release -r linux-arm64 --self-contained \
-        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
-        -o ~/mbbsemu-linux-arm64 -v q -nologo
-    echo "published to ~/mbbsemu-linux-arm64"
+        -p:PublishSingleFile=false -o ./publish -v q -nologo
+    echo "published to $(pwd)/publish"
 fi
