@@ -13,7 +13,8 @@
 #   --no-test   skip the full test suite
 #   --push      force-push seen to origin afterwards (keeps a backup of the list), and
 #               fast-forward origin's master to upstream/master (it's a mirror; never commit to it)
-#   --publish   dotnet publish linux-arm64 (self-contained, not single-file) to ./publish afterwards
+#   --publish   dotnet publish linux-arm64 (self-contained, not single-file) to ./publish afterwards,
+#               then print the rsync command that deploys it (target from git config meta.deployTarget)
 #
 # On a conflict it stops on branch seen-new with the merge in progress. Resolve it, run
 # git commit, and run Meta/reintegrate again: the rebuild starts over and rerere replays your
@@ -151,4 +152,11 @@ if [[ $PUBLISH -eq 1 ]]; then
     dotnet publish MBBSEmu/MBBSEmu.csproj -c Release -r linux-arm64 --self-contained \
         -p:PublishSingleFile=false -o ./publish -v q -nologo
     echo "published to $(pwd)/publish"
+    #Where the build goes, e.g. user@host:~/local-mmud/publish/ (kept in local git config, not here)
+    target=$(git config --get meta.deployTarget || true)
+    echo
+    echo "To deploy: stop the BBS, then"
+    echo "  rsync -av --delete $(pwd)/publish/ ${target:-<user@host:path/>}"
+    [[ -n $target ]] || echo "  (set the target once with: git config meta.deployTarget user@host:path/)"
+    echo "and start it again."
 fi

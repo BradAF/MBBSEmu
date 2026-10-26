@@ -23,6 +23,7 @@ echo Meta/ >> .git/info/exclude
 | To | Run |
 |---|---|
 | Pick up upstream and rebuild | `Meta/reintegrate` (add `--push` to back up `seen`, `--publish` for the Pi build) |
+| Set where `--publish` says to deploy | `git config meta.deployTarget user@host:path/` (once; it prints the `rsync` to run) |
 | Carry a new fix | `git switch -c fix/x upstream/master`, commit, then `git switch seen && git merge --no-ff fix/x` |
 | Carry someone's PR | `git fetch upstream pull/<n>/head:pr/<n> && git switch seen && git merge --no-ff pr/<n>` |
 | Check a new fix against the rest | `Meta/overlaps fix/x` |
