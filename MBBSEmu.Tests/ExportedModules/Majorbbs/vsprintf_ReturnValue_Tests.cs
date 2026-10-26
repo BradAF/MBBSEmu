@@ -4,7 +4,7 @@ using Xunit;
 
 namespace MBBSEmu.Tests.ExportedModules.Majorbbs
 {
-    public class vsprintf_Tests : ExportedModuleTestBase
+    public class vsprintf_ReturnValue_Tests : ExportedModuleTestBase
     {
         private const int VSPRINTF_ORDINAL = 643;
 
