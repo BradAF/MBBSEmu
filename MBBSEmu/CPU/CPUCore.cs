@@ -732,6 +732,10 @@ namespace MBBSEmu.CPU
                 case Mnemonic.Fnclex:
                     Op_Fclex();
                     break;
+                case Mnemonic.Finit:
+                case Mnemonic.Fninit:
+                    Op_Finit();
+                    break;
                 case Mnemonic.Frndint:
                     Op_Frndint();
                     break;
@@ -4498,6 +4502,18 @@ namespace MBBSEmu.CPU
         private void Op_Fclex()
         {
             Registers.Fpu.ClearExceptions();
+        }
+
+        /// <summary>
+        ///     Initializes the FPU to its power-on state: all exceptions masked,
+        ///     round to nearest, 64-bit precision (0x037F), empty register stack
+        /// </summary>
+        [MethodImpl(OpcodeCompilerOptimizations)]
+        private void Op_Finit()
+        {
+            Registers.Fpu.ControlWord = 0x037F;
+            Registers.Fpu.StatusWord = 0;
+            Array.Clear(FpuStack);
         }
 
         /// <summary>
