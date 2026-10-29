@@ -748,6 +748,18 @@ namespace MBBSEmu.CPU
                 case Mnemonic.Ftst:
                     Op_Ftst();
                     break;
+                case Mnemonic.Fxam:
+                    Op_Fxam();
+                    break;
+                case Mnemonic.Fimul:
+                    Op_Fimul();
+                    break;
+                case Mnemonic.Fidiv:
+                    Op_Fidiv();
+                    break;
+                case Mnemonic.Fbstp:
+                    Op_Fbstp();
+                    break;
                 case Mnemonic.Fcom:
                     Op_Fcom();
                     break;
@@ -4773,6 +4785,98 @@ namespace MBBSEmu.CPU
                 Registers.Fpu.SetFlag(EnumFpuStatusFlags.Code3);
             }
 
+        }
+
+        /// <summary>
+        ///     Examine ST(0) (x87)
+        ///
+        ///     Sets C1 to the sign of ST(0), and C3/C2/C0 to its class. FpuStack has no tag word,
+        ///     so an empty register is reported by its value like any other.
+        /// </summary>
+        [MethodImpl(OpcodeCompilerOptimizations)]
+        private void Op_Fxam()
+        {
+            var ST0Value = FpuStack[Registers.Fpu.GetStackTop()];
+
+            Registers.Fpu.ClearFlag(EnumFpuStatusFlags.Code0 | EnumFpuStatusFlags.Code1 | EnumFpuStatusFlags.Code2 | EnumFpuStatusFlags.Code3);
+
+            if (double.IsNegative(ST0Value))
+                Registers.Fpu.SetFlag(EnumFpuStatusFlags.Code1);
+
+            if (double.IsNaN(ST0Value))
+                Registers.Fpu.SetFlag(EnumFpuStatusFlags.Code0);
+            else if (double.IsInfinity(ST0Value))
+                Registers.Fpu.SetFlag(EnumFpuStatusFlags.Code2 | EnumFpuStatusFlags.Code0);
+            else if (ST0Value == 0.0d)
+                Registers.Fpu.SetFlag(EnumFpuStatusFlags.Code3);
+            else if (double.IsSubnormal(ST0Value))
+                Registers.Fpu.SetFlag(EnumFpuStatusFlags.Code3 | EnumFpuStatusFlags.Code2);
+            else
+                Registers.Fpu.SetFlag(EnumFpuStatusFlags.Code2);
+        }
+
+        /// <summary>
+        ///     Integer Multiply (x87)
+        ///
+        ///     Multiplies ST(0) by a 16-bit or 32-bit signed integer in memory
+        /// </summary>
+        [MethodImpl(OpcodeCompilerOptimizations)]
+        private void Op_Fimul()
+        {
+            var source = GetOperandValueInt64(_currentInstruction.Op0Kind);
+            FpuStack[Registers.Fpu.GetStackTop()] *= source;
+        }
+
+        /// <summary>
+        ///     Integer Divide (x87)
+        ///
+        ///     Divides ST(0) by a 16-bit or 32-bit signed integer in memory
+        /// </summary>
+        [MethodImpl(OpcodeCompilerOptimizations)]
+        private void Op_Fidiv()
+        {
+            var source = GetOperandValueInt64(_currentInstruction.Op0Kind);
+            FpuStack[Registers.Fpu.GetStackTop()] /= source;
+        }
+
+        /// <summary>
+        ///     Store BCD Integer & Pop (x87)
+        ///
+        ///     Rounds ST(0) to an integer and stores it as 80-bit packed BCD: 18 digits, two per byte with
+        ///     the least significant byte first, and the sign in bit 7 of the last byte
+        /// </summary>
+        [MethodImpl(OpcodeCompilerOptimizations)]
+        private void Op_Fbstp()
+        {
+            var offset = GetOperandOffset(_currentInstruction.Op0Kind);
+            var destinationSegment = Registers.GetValue(_currentInstruction.MemorySegment);
+
+            var valueFromFpu = Math.Round(FpuStack[Registers.Fpu.GetStackTop()], Registers.Fpu.GetRoundingControl());
+            Registers.Fpu.PopStackTop();
+
+            Span<byte> bytes = stackalloc byte[10];
+            if (double.IsNaN(valueFromFpu) || Math.Abs(valueFromFpu) >= 1_000_000_000_000_000_000d)
+            {
+                //Packed BCD indefinite
+                Registers.Fpu.ControlWord = Registers.Fpu.ControlWord.SetFlag((ushort)EnumFpuControlWordFlags.InvalidOperation);
+                bytes[7] = 0xC0;
+                bytes[8] = 0xFF;
+                bytes[9] = 0xFF;
+                Memory.SetArray(destinationSegment, offset, bytes);
+                return;
+            }
+
+            var digits = (ulong)Math.Abs(valueFromFpu);
+            for (var i = 0; i < 9; i++)
+            {
+                bytes[i] = (byte)(digits % 10 | (digits / 10 % 10) << 4);
+                digits /= 100;
+            }
+
+            if (double.IsNegative(valueFromFpu))
+                bytes[9] = 0x80;
+
+            Memory.SetArray(destinationSegment, offset, bytes);
         }
 
         /// <summary>
